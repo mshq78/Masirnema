@@ -1,11 +1,11 @@
-import { SessionRecord } from '../types';
+import { Participant, ParticipantInput, SessionRecord } from '../types';
 
 export type LoginResult =
-  | { status: 'ok'; participantToken: string; submitted: boolean }
+  | { status: 'ok'; participantToken: string; submitted: boolean; firstName?: string }
   | { status: 'invalid' | 'offline' | 'unavailable' };
 
 export class SubmitError extends Error {
-  constructor(public readonly kind: 'offline' | 'server') {
+  constructor(public readonly kind: 'offline' | 'server' | 'not_registered') {
     super(kind);
   }
 }
@@ -28,10 +28,15 @@ class ApiService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mobile, nationalId }),
       });
-      if (res.status === 400) return { status: 'invalid' };
+      if (res.status === 400 || res.status === 401) return { status: 'invalid' };
       if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
         const body = await res.json();
-        return { status: 'ok', participantToken: body.participantToken, submitted: !!body.submitted };
+        return {
+          status: 'ok',
+          participantToken: body.participantToken,
+          submitted: !!body.submitted,
+          firstName: body.firstName,
+        };
       }
     } catch {
       return { status: 'offline' };
@@ -56,6 +61,7 @@ class ApiService {
       throw new SubmitError('offline');
     }
     if (res.ok || res.status === 409) return; // 409: this participant already submitted
+    if (res.status === 403) throw new SubmitError('not_registered');
     throw new SubmitError('server');
   }
 
@@ -79,6 +85,51 @@ class ApiService {
     }
     return { status: 'unavailable' };
   }
+
+  private adminHeaders(adminPassword: string) {
+    return { 'Content-Type': 'application/json', 'x-admin-password': adminPassword };
+  }
+
+  /** Admin: the pre-registered roster (no national IDs). */
+  async listParticipants(adminPassword: string): Promise<Participant[] | null> {
+    try {
+      const res = await fetch('/api/participants', { headers: this.adminHeaders(adminPassword) });
+      if (!res.ok) return null;
+      return (await res.json()).participants as Participant[];
+    } catch {
+      return null;
+    }
+  }
+
+  /** Admin: adds/updates participants (upsert by mobile). `errors[].index` refers to the posted array. */
+  async addParticipants(
+    adminPassword: string,
+    participants: ParticipantInput[]
+  ): Promise<{ added: number; updated: number; errors: { index: number; reason: string }[] } | null> {
+    try {
+      const res = await fetch('/api/participants', {
+        method: 'POST',
+        headers: this.adminHeaders(adminPassword),
+        body: JSON.stringify({ participants }),
+      });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async deleteParticipant(adminPassword: string, mobile: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/participants?mobile=${encodeURIComponent(mobile)}`, {
+        method: 'DELETE',
+        headers: this.adminHeaders(adminPassword),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
 }
+
 
 export const api = new ApiService();

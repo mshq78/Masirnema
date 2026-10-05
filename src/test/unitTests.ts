@@ -1,6 +1,7 @@
 import { QUESTIONS } from '../questions';
 import { countChars, clipToMaxChars } from '../countChars';
 import { UI_STRINGS, CONSENT_TEXT } from '../content/ui.fa';
+import { parseParticipantRows } from '../utils/participants';
 import { normalizeIranMobile, normalizeNationalId } from '../utils/validation';
 
 export interface TestResult {
@@ -45,6 +46,27 @@ export function runAllUnitTests(): { allPassed: boolean; results: TestResult[] }
   check('national ID: wrong checksum rejected', normalizeNationalId('0499370890') === null);
   check('national ID: repeated digits rejected', normalizeNationalId('1111111111') === null);
   check('national ID: wrong length rejected', normalizeNationalId('049937089') === null);
+
+  // --- participant roster import ---------------------------------------------
+  const sample = parseParticipantRows([
+    ['ردیف', 'نام', 'نام خانوادگي', 'کد ملي', 'تلفن همراه'],
+    [1, 'علی', 'رضایي', '0499370899', '09123456789'],
+    [2, 'سارا', 'محمدي', 499370899, 9123456780], // numeric cells lost their leading zeros
+    [3, 'بدون', 'موبایل', '0499370899', '123'],
+    [4, 'کد', 'نادرست', '0499370890', '09121111111'],
+    [5, 'تکراری', 'شماره', '0499370899', '09123456789'],
+    [null, null, null, null, null],
+  ]);
+  check('import: valid rows parsed', sample.valid.length === 2, `got ${sample.valid.length}`);
+  check('import: Arabic yeh/kaf normalised', sample.valid[0]?.lastName === 'رضایی');
+  check('import: numeric cells get leading zeros back', sample.valid[1]?.nationalId === '0499370899' && sample.valid[1]?.mobile === '09123456780');
+  check(
+    'import: bad mobile / national ID / duplicate reported with row numbers',
+    sample.errors.map((e) => `${e.row}:${e.reason}`).join() === '4:mobile,5:national_id,6:duplicate',
+    sample.errors.map((e) => `${e.row}:${e.reason}`).join()
+  );
+  check('import: missing columns reported', parseParticipantRows([['نام', 'کد ملی'], ['الف', '1']]).missingColumns.join() === 'lastName,mobile');
+  check('import: unrelated columns ignored', parseParticipantRows([['x', 'نام', 'نام خانوادگی', 'کد ملی', 'موبایل', 'y'], [1, 'الف', 'ب', '0499370899', '09123456789', 2]]).valid.length === 1);
 
   // --- question bank / no-leak ---------------------------------------------
   check('Question count is exactly 12', QUESTIONS.length === 12, `got ${QUESTIONS.length}`);

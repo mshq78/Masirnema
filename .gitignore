@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# participant rosters contain personal data; never commit them
+*.xlsx
+*.xls
+*.csv

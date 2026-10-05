@@ -10,6 +10,7 @@ interface SurveyContextValue {
   ready: boolean;
   isAuthenticated: boolean;
   participantMobile: string;
+  participantFirstName: string;
   isSubmitted: boolean;
   consentAccepted: boolean;
   answers: Record<string, string>;
@@ -92,7 +93,7 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const result = await api.login(mobile, nationalId);
     if (result.status !== 'ok') return result.status;
     if (result.submitted) storage.markSubmitted({ sessionId: '', participantToken: result.participantToken });
-    const next: AuthState = { mobile, participantToken: result.participantToken };
+    const next: AuthState = { mobile, participantToken: result.participantToken, firstName: result.firstName };
     storage.saveAuth(next);
     setReady(false);
     setAuth(next);
@@ -213,6 +214,7 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     isSubmitted,
     isAuthenticated: !!auth,
     participantMobile: auth?.mobile ?? '',
+    participantFirstName: auth?.firstName ?? '',
     consentAccepted: !!progress?.consent,
     answers: progress?.answers ?? {},
     metaByQuestion: progress?.meta ?? {},

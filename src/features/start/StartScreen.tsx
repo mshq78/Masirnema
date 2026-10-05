@@ -8,7 +8,7 @@ import { BRAND_CONFIG } from '../../config/brand';
 
 export const StartScreen: React.FC = () => {
   const navigate = useNavigate();
-  const { consentAccepted, currentOrder, acceptConsent } = useSurvey();
+  const { consentAccepted, currentOrder, acceptConsent, participantFirstName } = useSurvey();
   const [agreed, setAgreed] = useState(false);
   const t = UI_STRINGS.start;
 
@@ -29,6 +29,11 @@ export const StartScreen: React.FC = () => {
           {BRAND_CONFIG.appTitle}
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">{BRAND_CONFIG.subtitle}</p>
+        {participantFirstName && (
+          <p className="text-base font-bold text-slate-800 dark:text-amber-100">
+            {t.hello} {participantFirstName}
+          </p>
+        )}
       </header>
 
       <div className="w-full bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">

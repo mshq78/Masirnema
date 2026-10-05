@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Lock, FileJson, FileSpreadsheet, ShieldCheck, Search, RefreshCw, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../../services/api';
-import { SessionRecord } from '../../types';
+import { Participant, SessionRecord } from '../../types';
+import { ParticipantsPanel } from './ParticipantsPanel';
 import { QUESTIONS } from '../../questions';
 import { UI_STRINGS } from '../../content/ui.fa';
 import { toPersianDigits, toEnglishDigits, formatSeconds } from '../../utils/number';
@@ -44,6 +45,8 @@ export const AdminView: React.FC = () => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
+  const [participants, setParticipants] = useState<Participant[]>([]);
+  const [tab, setTab] = useState<'sessions' | 'participants'>('participants');
   const [selected, setSelected] = useState<SessionRecord | null>(null);
   const [search, setSearch] = useState('');
   const [testResults, setTestResults] = useState<{ allPassed: boolean; results: TestResult[] } | null>(null);
@@ -57,6 +60,7 @@ export const AdminView: React.FC = () => {
     if (result.status === 'ok') {
       setAdminPassword(passwordInput);
       setSessions(result.sessions);
+      setParticipants((await api.listParticipants(passwordInput)) ?? []);
       setIsAuthenticated(true);
       setLoginMessage('');
     } else {
@@ -74,8 +78,19 @@ export const AdminView: React.FC = () => {
     setIsRefreshing(true);
     const result = await api.listSessionsAdmin(adminPassword);
     if (result.status === 'ok') setSessions(result.sessions);
+    setParticipants((await api.listParticipants(adminPassword)) ?? participants);
     setIsRefreshing(false);
   };
+
+  const reloadParticipants = async () => {
+    const list = await api.listParticipants(adminPassword);
+    if (list) setParticipants(list);
+  };
+
+  const nameByMobile = useMemo(
+    () => new Map(participants.map((p) => [p.mobile, `${p.firstName} ${p.lastName}`])),
+    [participants]
+  );
 
   const day = () => new Date().toISOString().slice(0, 10);
 
@@ -85,13 +100,13 @@ export const AdminView: React.FC = () => {
   const handleExportCSV = () => {
     if (sessions.length === 0) return;
     const headers = [
-      'SessionID', 'Mobile', 'StartedAt', 'FinishedAt', 'QuestionSetVersion', 'ConsentVersion',
+      'SessionID', 'Name', 'Mobile', 'StartedAt', 'FinishedAt', 'QuestionSetVersion', 'ConsentVersion',
       ...QUESTIONS.flatMap((q) => [`${q.id}_Text`, `${q.id}_ActiveSec`, `${q.id}_PasteEvents`, `${q.id}_PastedChars`, `${q.id}_Edits`]),
     ];
     const rows = sessions.map((s) => {
       const byId = new Map(s.answers.map((a) => [a.questionId, a]));
       return [
-        s.sessionId, s.participantMobile, s.startedAt, s.finishedAt, s.questionSetVersion, s.consentVersion,
+        s.sessionId, nameByMobile.get(s.participantMobile) ?? '', s.participantMobile, s.startedAt, s.finishedAt, s.questionSetVersion, s.consentVersion,
         ...QUESTIONS.flatMap((q) => {
           const a = byId.get(q.id);
           return [
@@ -110,7 +125,7 @@ export const AdminView: React.FC = () => {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return q
-      ? sessions.filter((s) => s.sessionId.toLowerCase().includes(q) || (s.participantMobile ?? '').includes(toEnglishDigits(q)))
+      ? sessions.filter((s) => s.sessionId.toLowerCase().includes(q) || (s.participantMobile ?? '').includes(toEnglishDigits(q)) || (nameByMobile.get(s.participantMobile) ?? '').toLowerCase().includes(q))
       : sessions;
   }, [sessions, search]);
 
@@ -186,6 +201,30 @@ export const AdminView: React.FC = () => {
 
       <p className="text-xs text-slate-500 dark:text-slate-400">{t.privacyNote}</p>
 
+      <div role="tablist" className="flex gap-2 border-b border-slate-200 dark:border-slate-800">
+        {(['participants', 'sessions'] as const).map((id) => (
+          <button
+            key={id}
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            className={`px-4 py-2 text-sm font-bold -mb-px border-b-2 cursor-pointer transition ${
+              tab === id
+                ? 'border-amber-500 text-slate-900 dark:text-amber-100'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            {id === 'sessions' ? t.tabSessions : t.tabParticipants}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'participants' && (
+        <ParticipantsPanel adminPassword={adminPassword} participants={participants} onChanged={reloadParticipants} />
+      )}
+
+      {tab === 'sessions' && (
+        <>
       {testResults && (
         <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-2">
           <p className={`flex items-center gap-2 text-sm font-bold ${testResults.allPassed ? 'text-slate-800 dark:text-slate-100' : 'text-amber-700 dark:text-amber-300'}`}>
@@ -236,6 +275,7 @@ export const AdminView: React.FC = () => {
             <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="px-3 py-2 font-medium">{t.colFinished}</th>
+                <th className="px-3 py-2 font-medium">{t.colName}</th>
                 <th className="px-3 py-2 font-medium">{t.colMobile}</th>
                 <th className="px-3 py-2 font-medium">{t.colTime}</th>
                 <th className="px-3 py-2 font-medium">{t.colPaste}</th>
@@ -246,6 +286,7 @@ export const AdminView: React.FC = () => {
               {filtered.map((s) => (
                 <tr key={s.sessionId} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 whitespace-nowrap">{formatDate(s.finishedAt)}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{nameByMobile.get(s.participantMobile) ?? '—'}</td>
                   <td className="px-3 py-2 font-mono text-[11px]" dir="ltr">{s.participantMobile}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatSeconds(totalActiveMs(s))}</td>
                   <td className="px-3 py-2">{toPersianDigits(totalPastes(s))}</td>
@@ -261,11 +302,14 @@ export const AdminView: React.FC = () => {
         </div>
       )}
 
+        </>
+      )}
+
       <Modal isOpen={!!selected} onClose={() => setSelected(null)} title={t.detailTitle} maxWidth="xl">
         {selected && (
           <div className="space-y-4">
             <p className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
-              {selected.sessionId} · {selected.participantMobile}
+              {nameByMobile.get(selected.participantMobile) ?? ''} {selected.participantMobile} · {selected.sessionId}
             </p>
             {QUESTIONS.map((q) => {
               const a = selected.answers.find((x) => x.questionId === q.id);

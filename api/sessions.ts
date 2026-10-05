@@ -17,6 +17,7 @@ const MAX_REVISIONS = 100;
 const connectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL;
 const sql = connectionString ? neon(connectionString) : null;
 
+// Keep in sync with api/participants.ts
 let tableReady: Promise<unknown> | null = null;
 function ensureTable() {
   if (!sql) throw new Error('DATABASE_URL is not configured');
@@ -35,6 +36,15 @@ function ensureTable() {
       await sql`
         CREATE UNIQUE INDEX IF NOT EXISTS masirnama_sessions_token_idx
         ON masirnama_sessions (participant_token)
+      `;
+      await sql`
+        CREATE TABLE IF NOT EXISTS masirnama_participants (
+          mobile             TEXT PRIMARY KEY,
+          first_name         TEXT NOT NULL,
+          last_name          TEXT NOT NULL,
+          participant_token  TEXT NOT NULL UNIQUE,
+          created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
       `;
     })().catch((err) => {
       tableReady = null;
@@ -122,6 +132,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const session = sanitizeSession(req.body);
       if (!session) return res.status(400).json({ error: 'invalid_session' });
       await ensureTable();
+      // Only pre-registered participants may submit (token and mobile must match the roster).
+      const registered = await sql!`
+        SELECT 1 FROM masirnama_participants
+        WHERE participant_token = ${session.participantToken} AND mobile = ${session.participantMobile}
+      `;
+      if (registered.length === 0) return res.status(403).json({ error: 'not_registered' });
       try {
         await sql!`
           INSERT INTO masirnama_sessions (session_id, participant_token, mobile, data)

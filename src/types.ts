@@ -54,8 +54,26 @@ export interface InProgressSurvey {
 
 /** Who is logged in on this device. The national ID is never stored; only the server-derived token. */
 export interface AuthState {
+  firstName?: string;
   mobile: string;
   participantToken: string;
+}
+
+/** One person on the pre-registered roster (the national ID is never returned by the server). */
+export interface Participant {
+  firstName: string;
+  lastName: string;
+  mobile: string;
+  submitted: boolean;
+  createdAt: string;
+}
+
+/** Input for adding participants (single form or Excel row). */
+export interface ParticipantInput {
+  firstName: string;
+  lastName: string;
+  mobile: string;
+  nationalId: string;
 }
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';

@@ -14,7 +14,7 @@ export const ReviewScreen: React.FC = () => {
   const { answers, isOffline, submitFinal } = useSurvey();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitFailed, setSubmitFailed] = useState(false);
+  const [submitFailed, setSubmitFailed] = useState<false | 'server' | 'not_registered'>(false);
   const t = UI_STRINGS.review;
 
   const allComplete = QUESTIONS.every((q) => countChars(answers[q.id] ?? '').count >= q.minChars);
@@ -28,7 +28,7 @@ export const ReviewScreen: React.FC = () => {
       // The provider flips to "submitted"; the route guard moves us to /done.
     } catch (err) {
       if (!(err instanceof SubmitError)) console.error(err);
-      setSubmitFailed(true);
+      setSubmitFailed(err instanceof SubmitError && err.kind === 'not_registered' ? 'not_registered' : 'server');
       setIsModalOpen(false);
       setSubmitting(false);
     }
@@ -79,7 +79,7 @@ export const ReviewScreen: React.FC = () => {
         {!allComplete && <p className="text-xs text-amber-800 dark:text-amber-300 text-center">{t.incomplete}</p>}
         {submitFailed && (
           <p role="alert" className="text-xs text-amber-800 dark:text-amber-300 text-center">
-            {t.submitError}
+            {submitFailed === 'not_registered' ? t.notRegistered : t.submitError}
           </p>
         )}
         <Button
