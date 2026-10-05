@@ -1,5 +1,5 @@
 import React from 'react';
-import { Cloud, CloudCheck } from 'lucide-react';
+import { Cloud, CloudCheck, LogOut } from 'lucide-react';
 import { BrandLockup } from './BrandLockup';
 import { ThemeToggle } from './ThemeToggle';
 import { ProgressRule } from './ProgressRule';
@@ -24,7 +24,7 @@ export const PageShell: React.FC<PageShellProps> = ({
   compactHeader = false,
   className = '',
 }) => {
-  const { syncStatus, isOffline } = useSurvey();
+  const { syncStatus, isOffline, isAuthenticated, logout } = useSurvey();
 
   return (
     <div className="min-h-screen flex flex-col justify-between selection:bg-amber-400/40 text-slate-800 dark:text-slate-100">
@@ -58,6 +58,17 @@ export const PageShell: React.FC<PageShellProps> = ({
               )}
             </div>
 
+            {isAuthenticated && (
+              <button
+                type="button"
+                onClick={logout}
+                title={UI_STRINGS.login.logout}
+                aria-label={UI_STRINGS.login.logout}
+                className="w-9 h-9 rounded-xl flex items-center justify-center border border-slate-300 dark:border-slate-700 bg-white/80 dark:bg-slate-800/80 text-slate-700 dark:text-amber-300 hover:border-amber-400 transition cursor-pointer shadow-xs"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
             <ThemeToggle />
           </div>
         </div>

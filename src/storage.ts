@@ -1,10 +1,9 @@
-import { InProgressSurvey, SessionRecord } from './types';
-import { PARTICIPANT_TOKEN_PATTERN } from './config';
+import { AuthState, InProgressSurvey, SessionRecord } from './types';
 
 const PREFIX = 'masirnama:';
+const AUTH_KEY = `${PREFIX}auth`;
 const PROGRESS_KEY = `${PREFIX}progress`;
 const SUBMITTED_KEY = `${PREFIX}submitted`;
-const DEMO_TOKEN_KEY = `${PREFIX}demo_token`;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -23,32 +22,27 @@ function write(key: string, value: unknown) {
   }
 }
 
-function randomId(prefix: string): string {
+export function newSessionId(): string {
   const bytes = new Uint8Array(8);
   crypto.getRandomValues(bytes);
-  return prefix + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-/**
- * Participant token comes from the invitation link (`?t=...`). Without a (valid) one, a random
- * demo token is generated and remembered on this device.
- */
-export function getParticipantToken(): string {
-  const fromUrl = new URLSearchParams(window.location.search).get('t')?.trim();
-  if (fromUrl && PARTICIPANT_TOKEN_PATTERN.test(fromUrl)) return fromUrl;
-  let demo = read<string>(DEMO_TOKEN_KEY, '');
-  if (!demo) {
-    demo = randomId('demo_');
-    write(DEMO_TOKEN_KEY, demo);
-  }
-  return demo;
-}
-
-export function newSessionId(): string {
-  return randomId('sess_');
+  return 'sess_' + Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 export const storage = {
+  loadAuth(): AuthState | null {
+    const a = read<AuthState | null>(AUTH_KEY, null);
+    return a && a.mobile && a.participantToken ? a : null;
+  },
+  saveAuth(auth: AuthState) {
+    write(AUTH_KEY, auth);
+  },
+  clearAuth() {
+    try {
+      localStorage.removeItem(AUTH_KEY);
+    } catch {
+      /* ignore */
+    }
+  },
   loadProgress(participantToken: string): InProgressSurvey | null {
     const p = read<InProgressSurvey | null>(PROGRESS_KEY, null);
     return p && p.participantToken === participantToken ? p : null;
@@ -71,5 +65,5 @@ export const storage = {
   markSubmitted(session: Pick<SessionRecord, 'sessionId' | 'participantToken'>) {
     write(SUBMITTED_KEY, { sessionId: session.sessionId, participantToken: session.participantToken });
   },
-  keys: { PROGRESS_KEY, SUBMITTED_KEY },
+  keys: { AUTH_KEY, PROGRESS_KEY, SUBMITTED_KEY },
 };

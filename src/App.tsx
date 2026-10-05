@@ -6,6 +6,7 @@ import { PageShell } from './components/PageShell';
 import { LoadingSkeleton } from './components/StateViews';
 import { QUESTIONS } from './questions';
 
+import { LoginScreen } from './features/login/LoginScreen';
 import { StartScreen } from './features/start/StartScreen';
 import { QuestionRoute } from './features/question/QuestionScreen';
 import { ReviewScreen } from './features/review/ReviewScreen';
@@ -15,18 +16,20 @@ const AdminView = lazy(() =>
   import('./features/admin/AdminView').then((m) => ({ default: m.AdminView }))
 );
 
-/** Access control: no results/report routes exist; everything is gated by consent and submission state. */
+/** Access control: no results/report routes exist; everything is gated by login, consent and submission state. */
 const Gate: React.FC<{ requireConsent?: boolean; children: React.ReactNode }> = ({ requireConsent, children }) => {
-  const { ready, isSubmitted, consentAccepted } = useSurvey();
+  const { ready, isAuthenticated, isSubmitted, consentAccepted } = useSurvey();
   if (!ready) return <LoadingSkeleton lines={4} />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (isSubmitted) return <Navigate to="/done" replace />;
   if (requireConsent && !consentAccepted) return <Navigate to="/" replace />;
   return <>{children}</>;
 };
 
 const DoneGate: React.FC = () => {
-  const { ready, isSubmitted } = useSurvey();
+  const { ready, isAuthenticated, isSubmitted } = useSurvey();
   if (!ready) return <LoadingSkeleton lines={2} />;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return isSubmitted ? <DoneScreen /> : <Navigate to="/" replace />;
 };
 
@@ -44,6 +47,7 @@ const AppRoutes: React.FC = () => {
     >
       <Suspense fallback={<LoadingSkeleton lines={5} />}>
         <Routes>
+          <Route path="/login" element={<LoginScreen />} />
           <Route path="/" element={<Gate><StartScreen /></Gate>} />
           <Route path="/q/:order" element={<Gate requireConsent><QuestionRoute /></Gate>} />
           <Route path="/review" element={<Gate requireConsent><ReviewScreen /></Gate>} />

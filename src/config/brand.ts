@@ -1,7 +1,7 @@
 export const BRAND_CONFIG = {
-  appTitle: 'مسیرنما',
-  shortTitle: 'مسیرنما',
-  subtitle: 'ابزار شناخت و توسعه سازمانی',
+  appTitle: 'نقش‌نما',
+  shortTitle: 'نقش‌نما',
+  subtitle: 'تصویری از شیوه نقش‌آفرینی شما در تیم',
   version: '1.0',
   themeColors: {
     navyDark: '#0E2340',

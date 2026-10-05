@@ -1,13 +1,15 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { QUESTIONS } from '../questions';
 import { CONSENT_VERSION, QUESTION_SET_VERSION } from '../config';
-import { api, SubmitError } from '../services/api';
-import { getParticipantToken, newSessionId, storage } from '../storage';
-import { ClientMeta, InProgressSurvey, SessionRecord, SyncStatus } from '../types';
+import { api, LoginResult, SubmitError } from '../services/api';
+import { newSessionId, storage } from '../storage';
+import { AuthState, ClientMeta, InProgressSurvey, SessionRecord, SyncStatus } from '../types';
 import { countChars } from '../countChars';
 
 interface SurveyContextValue {
   ready: boolean;
+  isAuthenticated: boolean;
+  participantMobile: string;
   isSubmitted: boolean;
   consentAccepted: boolean;
   answers: Record<string, string>;
@@ -16,6 +18,9 @@ interface SurveyContextValue {
   currentOrder: number;
   syncStatus: SyncStatus;
   isOffline: boolean;
+  /** Mobile = username, national ID = password. Resolves with the outcome; never throws. */
+  login: (mobile: string, nationalId: string) => Promise<LoginResult['status']>;
+  logout: () => void;
   acceptConsent: () => void;
   saveAnswer: (questionId: string, text: string, meta: ClientMeta, isStageComplete: boolean) => void;
   setCurrentOrder: (order: number) => void;
@@ -25,10 +30,11 @@ interface SurveyContextValue {
 
 const SurveyContext = createContext<SurveyContextValue | null>(null);
 
-function freshProgress(participantToken: string): InProgressSurvey {
+function freshProgress(auth: AuthState): InProgressSurvey {
   return {
     sessionId: newSessionId(),
-    participantToken,
+    participantToken: auth.participantToken,
+    participantMobile: auth.mobile,
     consent: null,
     startedAt: new Date().toISOString(),
     currentOrder: 1,
@@ -38,7 +44,8 @@ function freshProgress(participantToken: string): InProgressSurvey {
 }
 
 export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const participantToken = useMemo(() => getParticipantToken(), []);
+  const [auth, setAuth] = useState<AuthState | null>(() => storage.loadAuth());
+  const participantToken = auth?.participantToken ?? '';
   const [progress, setProgress] = useState<InProgressSurvey | null>(null);
   const [completedOrders, setCompletedOrders] = useState<Set<number>>(new Set());
   const [isSubmitted, setIsSubmitted] = useState(false);
@@ -54,14 +61,22 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     storage.saveProgress(next);
   }, []);
 
-  // Initialisation: resume an existing draft or start a new one.
+  // Initialisation (and re-initialisation on login/logout): resume an existing draft or start a new one.
   useEffect(() => {
-    if (storage.isSubmitted(participantToken)) {
+    progressRef.current = null;
+    setProgress(null);
+    setIsSubmitted(false);
+    setCompletedOrders(new Set());
+    if (!auth) {
+      setReady(true);
+      return;
+    }
+    if (storage.isSubmitted(auth.participantToken)) {
       setIsSubmitted(true);
       setReady(true);
       return;
     }
-    const existing = storage.loadProgress(participantToken) ?? freshProgress(participantToken);
+    const existing = storage.loadProgress(auth.participantToken) ?? freshProgress(auth);
     progressRef.current = existing;
     setProgress(existing);
     storage.saveProgress(existing);
@@ -71,7 +86,24 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       )
     );
     setReady(true);
-  }, [participantToken]);
+  }, [auth]);
+
+  const login = useCallback(async (mobile: string, nationalId: string): Promise<LoginResult['status']> => {
+    const result = await api.login(mobile, nationalId);
+    if (result.status !== 'ok') return result.status;
+    if (result.submitted) storage.markSubmitted({ sessionId: '', participantToken: result.participantToken });
+    const next: AuthState = { mobile, participantToken: result.participantToken };
+    storage.saveAuth(next);
+    setReady(false);
+    setAuth(next);
+    return 'ok';
+  }, []);
+
+  const logout = useCallback(() => {
+    storage.clearAuth();
+    setReady(false);
+    setAuth(null);
+  }, []);
 
   useEffect(() => {
     const on = () => setIsOffline(false);
@@ -138,6 +170,7 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const session: SessionRecord = {
       sessionId: p.sessionId,
       participantToken: p.participantToken,
+      participantMobile: p.participantMobile,
       questionSetVersion: QUESTION_SET_VERSION,
       consentVersion: p.consent.version,
       consentAcceptedAt: p.consent.acceptedAt,
@@ -178,6 +211,8 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const value: SurveyContextValue = {
     ready,
     isSubmitted,
+    isAuthenticated: !!auth,
+    participantMobile: auth?.mobile ?? '',
     consentAccepted: !!progress?.consent,
     answers: progress?.answers ?? {},
     metaByQuestion: progress?.meta ?? {},
@@ -185,6 +220,8 @@ export const SurveyProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     currentOrder: progress?.currentOrder ?? 1,
     syncStatus,
     isOffline,
+    login,
+    logout,
     acceptConsent,
     saveAnswer,
     setCurrentOrder,

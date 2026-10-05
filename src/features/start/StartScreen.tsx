@@ -23,7 +23,8 @@ export const StartScreen: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col items-center gap-5 py-2">
-      <header className="w-full text-center space-y-1.5">
+      <header className="w-full flex flex-col items-center text-center gap-3">
+        <img src="/logo.png" alt="" aria-hidden="true" className="w-20 h-20 object-contain" />
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-amber-100">
           {BRAND_CONFIG.appTitle}
         </h1>

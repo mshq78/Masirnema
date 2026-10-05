@@ -1,5 +1,9 @@
 import { SessionRecord } from '../types';
 
+export type LoginResult =
+  | { status: 'ok'; participantToken: string; submitted: boolean }
+  | { status: 'invalid' | 'offline' | 'unavailable' };
+
 export class SubmitError extends Error {
   constructor(public readonly kind: 'offline' | 'server') {
     super(kind);
@@ -9,6 +13,30 @@ export class SubmitError extends Error {
 class ApiService {
   public isOffline(): boolean {
     return typeof navigator !== 'undefined' && !navigator.onLine;
+  }
+
+  /**
+   * Participant login: mobile number = username, national ID = password. The server validates both,
+   * derives an opaque participant token (the national ID is never stored) and reports whether this
+   * participant has already submitted.
+   */
+  async login(mobile: string, nationalId: string): Promise<LoginResult> {
+    if (this.isOffline()) return { status: 'offline' };
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mobile, nationalId }),
+      });
+      if (res.status === 400) return { status: 'invalid' };
+      if (res.ok && (res.headers.get('content-type') || '').includes('application/json')) {
+        const body = await res.json();
+        return { status: 'ok', participantToken: body.participantToken, submitted: !!body.submitted };
+      }
+    } catch {
+      return { status: 'offline' };
+    }
+    return { status: 'unavailable' };
   }
 
   /**

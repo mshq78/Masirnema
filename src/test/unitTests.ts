@@ -1,6 +1,7 @@
 import { QUESTIONS } from '../questions';
 import { countChars, clipToMaxChars } from '../countChars';
 import { UI_STRINGS, CONSENT_TEXT } from '../content/ui.fa';
+import { normalizeIranMobile, normalizeNationalId } from '../utils/validation';
 
 export interface TestResult {
   name: string;
@@ -33,6 +34,17 @@ export function runAllUnitTests(): { allPassed: boolean; results: TestResult[] }
     `got ${countChars(clipToMaxChars(long, 50)).count}`
   );
   check('clipToMaxChars keeps short text untouched', clipToMaxChars('کوتاه', 50) === 'کوتاه');
+
+  // --- login validation -----------------------------------------------------
+  check('mobile: 09 format accepted', normalizeIranMobile('09123456789') === '09123456789');
+  check('mobile: Persian digits accepted', normalizeIranMobile('۰۹۱۲۳۴۵۶۷۸۹') === '09123456789');
+  check('mobile: +98 and bare 9… normalise', normalizeIranMobile('+989123456789') === '09123456789' && normalizeIranMobile('9123456789') === '09123456789');
+  check('mobile: too short / non-mobile rejected', normalizeIranMobile('0912345678') === null && normalizeIranMobile('02112345678') === null);
+  check('national ID: valid checksum accepted', normalizeNationalId('0499370899') === '0499370899');
+  check('national ID: Persian digits accepted', normalizeNationalId('۰۴۹۹۳۷۰۸۹۹') === '0499370899');
+  check('national ID: wrong checksum rejected', normalizeNationalId('0499370890') === null);
+  check('national ID: repeated digits rejected', normalizeNationalId('1111111111') === null);
+  check('national ID: wrong length rejected', normalizeNationalId('049937089') === null);
 
   // --- question bank / no-leak ---------------------------------------------
   check('Question count is exactly 12', QUESTIONS.length === 12, `got ${QUESTIONS.length}`);

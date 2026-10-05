@@ -31,6 +31,7 @@ export interface AnswerRecord {
 export interface SessionRecord {
   sessionId: string;
   participantToken: string;
+  participantMobile: string;
   questionSetVersion: string;
   consentVersion: string;
   consentAcceptedAt: string;
@@ -43,11 +44,18 @@ export interface SessionRecord {
 export interface InProgressSurvey {
   sessionId: string;
   participantToken: string;
+  participantMobile: string;
   consent: { version: string; acceptedAt: string } | null;
   startedAt: string;
   currentOrder: number;
   answers: Record<string, string>;
   meta: Record<string, ClientMeta>;
+}
+
+/** Who is logged in on this device. The national ID is never stored; only the server-derived token. */
+export interface AuthState {
+  mobile: string;
+  participantToken: string;
 }
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';

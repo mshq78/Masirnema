@@ -26,10 +26,12 @@ function ensureTable() {
         CREATE TABLE IF NOT EXISTS masirnama_sessions (
           session_id         TEXT PRIMARY KEY,
           participant_token  TEXT NOT NULL,
+          mobile             TEXT,
           data               JSONB NOT NULL,
           created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
         )
       `;
+      await sql`ALTER TABLE masirnama_sessions ADD COLUMN IF NOT EXISTS mobile TEXT`;
       await sql`
         CREATE UNIQUE INDEX IF NOT EXISTS masirnama_sessions_token_idx
         ON masirnama_sessions (participant_token)
@@ -66,6 +68,7 @@ function sanitizeSession(body: any) {
 
   const sessionId = str(body.sessionId, 80);
   const participantToken = str(body.participantToken, 100);
+  const participantMobile = str(body.participantMobile, 11);
   const questionSetVersion = str(body.questionSetVersion, 20);
   const consentVersion = str(body.consentVersion, 20);
   const consentAcceptedAt = str(body.consentAcceptedAt, 40);
@@ -74,6 +77,7 @@ function sanitizeSession(body: any) {
   if (
     !sessionId || !/^[A-Za-z0-9_-]{3,80}$/.test(sessionId) ||
     !participantToken || !/^[A-Za-z0-9_.-]{1,100}$/.test(participantToken) ||
+    !participantMobile || !/^09\d{9}$/.test(participantMobile) ||
     !questionSetVersion || !consentVersion || !consentAcceptedAt || !startedAt || !finishedAt
   ) {
     return null;
@@ -105,7 +109,7 @@ function sanitizeSession(body: any) {
   }
 
   return {
-    sessionId, participantToken, questionSetVersion, consentVersion,
+    sessionId, participantToken, participantMobile, questionSetVersion, consentVersion,
     consentAcceptedAt, startedAt, finishedAt, answers,
   };
 }
@@ -120,8 +124,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       await ensureTable();
       try {
         await sql!`
-          INSERT INTO masirnama_sessions (session_id, participant_token, data)
-          VALUES (${session.sessionId}, ${session.participantToken}, ${JSON.stringify(session)}::jsonb)
+          INSERT INTO masirnama_sessions (session_id, participant_token, mobile, data)
+          VALUES (${session.sessionId}, ${session.participantToken}, ${session.participantMobile}, ${JSON.stringify(session)}::jsonb)
           ON CONFLICT (session_id) DO NOTHING
         `;
       } catch (err: any) {

@@ -4,7 +4,7 @@ import { api } from '../../services/api';
 import { SessionRecord } from '../../types';
 import { QUESTIONS } from '../../questions';
 import { UI_STRINGS } from '../../content/ui.fa';
-import { toPersianDigits, formatSeconds } from '../../utils/number';
+import { toPersianDigits, toEnglishDigits, formatSeconds } from '../../utils/number';
 import { runAllUnitTests, TestResult } from '../../test/unitTests';
 import { Modal } from '../../components/Modal';
 import { Button } from '../../components/Button';
@@ -80,18 +80,18 @@ export const AdminView: React.FC = () => {
   const day = () => new Date().toISOString().slice(0, 10);
 
   const handleExportJSON = () =>
-    download(JSON.stringify(sessions, null, 2), 'application/json', `masirnama_sessions_${day()}.json`);
+    download(JSON.stringify(sessions, null, 2), 'application/json', `nashnama_sessions_${day()}.json`);
 
   const handleExportCSV = () => {
     if (sessions.length === 0) return;
     const headers = [
-      'SessionID', 'ParticipantToken', 'StartedAt', 'FinishedAt', 'QuestionSetVersion', 'ConsentVersion',
+      'SessionID', 'Mobile', 'StartedAt', 'FinishedAt', 'QuestionSetVersion', 'ConsentVersion',
       ...QUESTIONS.flatMap((q) => [`${q.id}_Text`, `${q.id}_ActiveSec`, `${q.id}_PasteEvents`, `${q.id}_PastedChars`, `${q.id}_Edits`]),
     ];
     const rows = sessions.map((s) => {
       const byId = new Map(s.answers.map((a) => [a.questionId, a]));
       return [
-        s.sessionId, s.participantToken, s.startedAt, s.finishedAt, s.questionSetVersion, s.consentVersion,
+        s.sessionId, s.participantMobile, s.startedAt, s.finishedAt, s.questionSetVersion, s.consentVersion,
         ...QUESTIONS.flatMap((q) => {
           const a = byId.get(q.id);
           return [
@@ -104,13 +104,13 @@ export const AdminView: React.FC = () => {
         }),
       ].map(csvCell).join(',');
     });
-    download('﻿' + [headers.map(csvCell).join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;', `masirnama_sessions_${day()}.csv`);
+    download('﻿' + [headers.map(csvCell).join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;', `nashnama_sessions_${day()}.csv`);
   };
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return q
-      ? sessions.filter((s) => s.sessionId.toLowerCase().includes(q) || s.participantToken.toLowerCase().includes(q))
+      ? sessions.filter((s) => s.sessionId.toLowerCase().includes(q) || (s.participantMobile ?? '').includes(toEnglishDigits(q)))
       : sessions;
   }, [sessions, search]);
 
@@ -236,7 +236,7 @@ export const AdminView: React.FC = () => {
             <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
               <tr>
                 <th className="px-3 py-2 font-medium">{t.colFinished}</th>
-                <th className="px-3 py-2 font-medium">{t.colToken}</th>
+                <th className="px-3 py-2 font-medium">{t.colMobile}</th>
                 <th className="px-3 py-2 font-medium">{t.colTime}</th>
                 <th className="px-3 py-2 font-medium">{t.colPaste}</th>
                 <th className="px-3 py-2" />
@@ -246,7 +246,7 @@ export const AdminView: React.FC = () => {
               {filtered.map((s) => (
                 <tr key={s.sessionId} className="border-t border-slate-100 dark:border-slate-800">
                   <td className="px-3 py-2 whitespace-nowrap">{formatDate(s.finishedAt)}</td>
-                  <td className="px-3 py-2 font-mono text-[11px]" dir="ltr">{s.participantToken}</td>
+                  <td className="px-3 py-2 font-mono text-[11px]" dir="ltr">{s.participantMobile}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatSeconds(totalActiveMs(s))}</td>
                   <td className="px-3 py-2">{toPersianDigits(totalPastes(s))}</td>
                   <td className="px-3 py-2 text-left">
@@ -265,7 +265,7 @@ export const AdminView: React.FC = () => {
         {selected && (
           <div className="space-y-4">
             <p className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
-              {selected.sessionId} · {selected.participantToken}
+              {selected.sessionId} · {selected.participantMobile}
             </p>
             {QUESTIONS.map((q) => {
               const a = selected.answers.find((x) => x.questionId === q.id);
