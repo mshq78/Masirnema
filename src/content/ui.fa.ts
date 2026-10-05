@@ -1,7 +1,7 @@
 export const UI_STRINGS = {
   common: {
-    appTitle: 'نقش‌نما',
-    subtitle: 'تصویری از شیوه نقش‌آفرینی شما در تیم',
+    appTitle: 'مسیرنما',
+    subtitle: 'ابزار شناخت و توسعه سازمانی',
     syncing: 'در حال ثبت…',
     synced: 'ثبت شد',
     offline: 'اتصال برقرار نیست؛ پاسخ شما روی این دستگاه حفظ شد و پس از برقراری اتصال می‌توانید ثبت نهایی کنید.',
@@ -21,7 +21,7 @@ export const UI_STRINGS = {
     description: 'متأسفانه خطایی رخ داد. لطفاً صفحه را دوباره بارگذاری کنید؛ پاسخ‌های ثبت‌شده روی دستگاه شما حفظ شده است.',
   },
   login: {
-    title: 'ورود به نقش‌نما',
+    title: 'ورود به مسیرنما',
     subtitle: 'برای شروع، شماره تماس و کد ملی خود را وارد کنید.',
     mobileLabel: 'شماره تماس (نام کاربری)',
     mobilePlaceholder: '۰۹۱۲۳۴۵۶۷۸۹',
@@ -91,7 +91,7 @@ export const UI_STRINGS = {
     passwordNotConfigured: 'گذرواژه مدیر روی سرور تنظیم نشده است (ADMIN_PASSWORD).',
     backendUnavailable: 'سرور در دسترس نیست. در محیط توسعه از «vercel dev» استفاده کنید.',
     loginButton: 'ورود',
-    title: 'پنل مدیریت نقش‌نما',
+    title: 'پنل مدیریت مسیرنما',
     refresh: 'به‌روزرسانی',
     exportJson: 'خروجی JSON',
     exportCsv: 'خروجی CSV',

@@ -95,7 +95,7 @@ export const AdminView: React.FC = () => {
   const day = () => new Date().toISOString().slice(0, 10);
 
   const handleExportJSON = () =>
-    download(JSON.stringify(sessions, null, 2), 'application/json', `nashnama_sessions_${day()}.json`);
+    download(JSON.stringify(sessions, null, 2), 'application/json', `masirnama_sessions_${day()}.json`);
 
   const handleExportCSV = () => {
     if (sessions.length === 0) return;
@@ -119,7 +119,7 @@ export const AdminView: React.FC = () => {
         }),
       ].map(csvCell).join(',');
     });
-    download('﻿' + [headers.map(csvCell).join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;', `nashnama_sessions_${day()}.csv`);
+    download('﻿' + [headers.map(csvCell).join(','), ...rows].join('\n'), 'text/csv;charset=utf-8;', `masirnama_sessions_${day()}.csv`);
   };
 
   const filtered = useMemo(() => {
