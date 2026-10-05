@@ -1,0 +1,87 @@
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/Vazirmatn-Variable.woff2') format('woff2');
+}
+
+/* Design Tokens: Semantic CSS Variables for Light and Dark Theme */
+
+:root {
+  /* Palette - Primary Navy & Ink */
+  --color-navy-950: #071321;
+  --color-navy-900: #0E2340;
+  --color-navy-800: #173255;
+  --color-navy-700: #1C3B61;
+  --color-navy-600: #2B4E7A;
+  --color-navy-500: #416A9E;
+
+  /* Palette - Gold & Amber Accents (Refined, no green/red) */
+  --color-gold-50: #FCF8EE;
+  --color-gold-100: #F7EDD1;
+  --color-gold-300: #EACF7D;
+  --color-gold-400: #F2C14E;
+  --color-gold-500: #C9A227;
+  --color-gold-600: #9E7D1A;
+
+  /* Palette - Cream & Neutral Parchment */
+  --color-cream-50: #FAF8F2;
+  --color-cream-100: #FAF4E6;
+  --color-cream-200: #F2EBD7;
+  --color-cream-300: #E6DBC3;
+
+  /* Light Theme Semantic Mapping */
+  --bg-app: #F8F5EE;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #FAF6EE 0%, #F3EEE3 100%);
+  --surface-app: #FFFFFF;
+  --surface-card: #FFFFFF;
+  --surface-elevated: #FAF8F2;
+  --surface-muted: #F2ECE0;
+  
+  --text-primary: #122238;
+  --text-secondary: #3B4F68;
+  --text-muted: #6B7F96;
+  --text-inverse: #FFFFFF;
+
+  --accent-gold: #C9A227;
+  --accent-gold-hover: #B5901D;
+  --accent-gold-subtle: rgba(201, 162, 39, 0.12);
+  --accent-gold-border: rgba(201, 162, 39, 0.35);
+
+  --border-subtle: #E6DFCE;
+  --border-medium: #D3C9B2;
+  --border-strong: #A89B7F;
+
+  --card-shadow: 0 4px 20px -2px rgba(18, 34, 56, 0.06), 0 2px 6px -1px rgba(18, 34, 56, 0.04);
+  --card-shadow-hover: 0 12px 30px -4px rgba(18, 34, 56, 0.1), 0 4px 10px -2px rgba(18, 34, 56, 0.06);
+  --ring-focus: rgba(201, 162, 39, 0.45);
+}
+
+/* Dark Theme Overrides */
+html.dark {
+  --bg-app: #08121D;
+  --bg-gradient: radial-gradient(circle at 50% 0%, #0F243D 0%, #08121D 100%);
+  --surface-app: #0D1E32;
+  --surface-card: #11263F;
+  --surface-elevated: #163252;
+  --surface-muted: #1A395C;
+
+  --text-primary: #FAF4E6;
+  --text-secondary: #CBD5E1;
+  --text-muted: #8EA4BE;
+  --text-inverse: #0E2340;
+
+  --accent-gold: #F2C14E;
+  --accent-gold-hover: #E4B43E;
+  --accent-gold-subtle: rgba(242, 193, 78, 0.16);
+  --accent-gold-border: rgba(242, 193, 78, 0.4);
+
+  --border-subtle: #1E3B5E;
+  --border-medium: #2C5282;
+  --border-strong: #4A73A6;
+
+  --card-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.45), 0 2px 8px -1px rgba(0, 0, 0, 0.3);
+  --card-shadow-hover: 0 14px 34px -4px rgba(0, 0, 0, 0.6), 0 4px 12px -2px rgba(0, 0, 0, 0.4);
+  --ring-focus: rgba(242, 193, 78, 0.55);
+}

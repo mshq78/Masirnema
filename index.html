@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>مسیرنما | ابزار شناخت و توسعه سازمانی</title>
+    <meta name="description" content="ابزار شناخت و توسعه سازمانی برای ثبت پاسخ‌های تشریحی کوتاه" />
+    <meta property="og:title" content="مسیرنما | ابزار شناخت و توسعه سازمانی" />
+    <meta property="og:description" content="ابزار شناخت و توسعه سازمانی برای ثبت پاسخ‌های تشریحی کوتاه" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="theme-color" content="#0E2340" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preload" href="/fonts/Vazirmatn-Variable.woff2" as="font" type="font/woff2" crossorigin="anonymous" />
+    <script>
+      (function() {
+        try {
+          var saved = localStorage.getItem('masirnama_theme');
+          var isDark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="antialiased selection:bg-amber-200/50 selection:text-slate-900 font-sans">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

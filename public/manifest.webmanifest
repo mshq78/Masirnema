@@ -1,0 +1,14 @@
+{
+  "name": "مسیرنما | ابزار شناخت و توسعه سازمانی",
+  "short_name": "مسیرنما",
+  "description": "ابزار شناخت و توسعه سازمانی برای ثبت پاسخ‌های تشریحی کوتاه",
+  "start_url": "./#/",
+  "display": "standalone",
+  "background_color": "#0E2340",
+  "theme_color": "#0E2340",
+  "dir": "rtl",
+  "lang": "fa",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

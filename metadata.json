@@ -1,0 +1,6 @@
+{
+  "name": "مسیرنما",
+  "description": "ابزار شناخت و توسعه سازمانی برای ثبت پاسخ‌های تشریحی",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
