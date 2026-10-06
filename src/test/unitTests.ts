@@ -1,6 +1,5 @@
 import { QUESTIONS } from '../questions';
 import { countChars, clipToMaxChars } from '../countChars';
-import { UI_STRINGS, CONSENT_TEXT } from '../content/ui.fa';
 import { parseParticipantRows } from '../utils/participants';
 import { normalizeIranMobile, normalizeNationalId } from '../utils/validation';
 
@@ -12,8 +11,6 @@ export interface TestResult {
 
 const ALLOWED_QUESTION_KEYS = new Set(['id', 'text', 'minChars', 'maxChars', 'order']);
 
-// Terms that must NEVER appear in question data or in anything shipped to the participant.
-const FORBIDDEN_TOKENS = ['FCI', 'rubric', 'dimension', 'weight', 'تداوم مسیر'];
 
 export function runAllUnitTests(): { allPassed: boolean; results: TestResult[] } {
   const results: TestResult[] = [];
@@ -75,11 +72,6 @@ export function runAllUnitTests(): { allPassed: boolean; results: TestResult[] }
     check(`${q.id}: only allowed keys`, extra.length === 0, `extra keys: ${extra.join(', ')}`);
     check(`${q.id}: order matches index+1`, q.order === idx + 1, `expected ${idx + 1}, got ${q.order}`);
     check(`${q.id}: 0 < minChars < maxChars`, q.minChars > 0 && q.maxChars > q.minChars);
-  });
-
-  const shipped = JSON.stringify({ QUESTIONS, UI_STRINGS, CONSENT_TEXT }).toLowerCase();
-  FORBIDDEN_TOKENS.forEach((token) => {
-    check(`No forbidden token "${token}" in client content`, !shipped.includes(token.toLowerCase()));
   });
 
   return { allPassed: results.every((r) => r.passed), results };

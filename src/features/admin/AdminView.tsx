@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import { Lock, FileJson, FileSpreadsheet, ShieldCheck, Search, RefreshCw, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../../services/api';
-import { Participant, SessionRecord } from '../../types';
+import { AnalysisResult, AnalysisSummary, Participant, SessionRecord } from '../../types';
+import { AnalysisReport } from './AnalysisReport';
 import { ParticipantsPanel } from './ParticipantsPanel';
 import { QUESTIONS } from '../../questions';
 import { UI_STRINGS } from '../../content/ui.fa';
@@ -46,11 +47,59 @@ export const AdminView: React.FC = () => {
 
   const [sessions, setSessions] = useState<SessionRecord[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [analyses, setAnalyses] = useState<Record<string, AnalysisSummary>>({});
+  const [analyzing, setAnalyzing] = useState<Set<string>>(new Set());
+  const [analysisMsg, setAnalysisMsg] = useState('');
+  const [report, setReport] = useState<{ session: SessionRecord; result: AnalysisResult; versions: number } | null>(null);
   const [tab, setTab] = useState<'sessions' | 'participants'>('participants');
   const [selected, setSelected] = useState<SessionRecord | null>(null);
   const [search, setSearch] = useState('');
   const [testResults, setTestResults] = useState<{ allPassed: boolean; results: TestResult[] } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const loadAnalyses = async (pw: string) => {
+    const list = await api.listAnalyses(pw);
+    if (list) setAnalyses(Object.fromEntries(list.map((a) => [a.sessionId, a])));
+  };
+
+  const analyzeOne = async (s: SessionRecord): Promise<boolean> => {
+    setAnalyzing((prev) => new Set(prev).add(s.sessionId));
+    setAnalysisMsg('');
+    const res = await api.runAnalysis(adminPassword, s.sessionId);
+    setAnalyzing((prev) => {
+      const next = new Set(prev);
+      next.delete(s.sessionId);
+      return next;
+    });
+    if (!res.ok) {
+      setAnalysisMsg(res.reason === 'not_configured' ? t.analyzeNotConfigured : t.analyzeFailed);
+      return false;
+    }
+    await loadAnalyses(adminPassword);
+    return true;
+  };
+
+  const openReport = async (s: SessionRecord) => {
+    const data = await api.getAnalysis(adminPassword, s.sessionId);
+    if (data) setReport({ session: s, ...data });
+  };
+
+  const rerunFromReport = async () => {
+    if (!report) return;
+    if (await analyzeOne(report.session)) await openReport(report.session);
+  };
+
+  const analyzeAllPending = async () => {
+    for (const s of sessions.filter((x) => !analyses[x.sessionId])) {
+      if (!(await analyzeOne(s))) break;
+    }
+  };
+
+  const exportReport = async () => {
+    if (!report) return;
+    await api.auditExport(adminPassword, report.session.sessionId);
+    download(JSON.stringify(report.result, null, 2), 'application/json', `masirnama_report_${report.session.sessionId}.json`);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +110,7 @@ export const AdminView: React.FC = () => {
       setAdminPassword(passwordInput);
       setSessions(result.sessions);
       setParticipants((await api.listParticipants(passwordInput)) ?? []);
+      await loadAnalyses(passwordInput);
       setIsAuthenticated(true);
       setLoginMessage('');
     } else {
@@ -79,6 +129,7 @@ export const AdminView: React.FC = () => {
     const result = await api.listSessionsAdmin(adminPassword);
     if (result.status === 'ok') setSessions(result.sessions);
     setParticipants((await api.listParticipants(adminPassword)) ?? participants);
+    await loadAnalyses(adminPassword);
     setIsRefreshing(false);
   };
 
@@ -255,6 +306,19 @@ export const AdminView: React.FC = () => {
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={analyzeAllPending}
+          disabled={analyzing.size > 0 || sessions.every((x) => analyses[x.sessionId])}
+          isLoading={analyzing.size > 0}
+        >
+          {analyzing.size > 0 ? t.analyzeProgress : t.analyzeAll}
+        </Button>
+        {analysisMsg && <span role="alert" className="text-xs text-rose-500 font-medium">{analysisMsg}</span>}
+      </div>
+
       <div className="relative">
         <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true" />
         <input
@@ -279,6 +343,7 @@ export const AdminView: React.FC = () => {
                 <th className="px-3 py-2 font-medium">{t.colMobile}</th>
                 <th className="px-3 py-2 font-medium">{t.colTime}</th>
                 <th className="px-3 py-2 font-medium">{t.colPaste}</th>
+                <th className="px-3 py-2 font-medium">{t.colAnalysis}</th>
                 <th className="px-3 py-2" />
               </tr>
             </thead>
@@ -290,6 +355,18 @@ export const AdminView: React.FC = () => {
                   <td className="px-3 py-2 font-mono text-[11px]" dir="ltr">{s.participantMobile}</td>
                   <td className="px-3 py-2 whitespace-nowrap">{formatSeconds(totalActiveMs(s))}</td>
                   <td className="px-3 py-2">{toPersianDigits(totalPastes(s))}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {analyses[s.sessionId] ? (
+                      <Button variant="secondary" size="sm" onClick={() => openReport(s)}>
+                        {t.openReport}
+                        {analyses[s.sessionId].level ? ` · ${analyses[s.sessionId].level}` : ''}
+                      </Button>
+                    ) : (
+                      <Button variant="outline" size="sm" isLoading={analyzing.has(s.sessionId)} onClick={() => analyzeOne(s)}>
+                        {t.analyze}
+                      </Button>
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-left">
                     <Button variant="ghost" size="sm" onClick={() => setSelected(s)} leftIcon={<Eye className="w-3.5 h-3.5" />}>
                       {t.view}
@@ -304,6 +381,18 @@ export const AdminView: React.FC = () => {
 
         </>
       )}
+
+      <Modal isOpen={!!report} onClose={() => setReport(null)} title={t.reportTitle} maxWidth="xl">
+        {report && (
+          <AnalysisReport
+            result={report.result}
+            versions={report.versions}
+            busy={analyzing.has(report.session.sessionId)}
+            onRerun={rerunFromReport}
+            onExport={exportReport}
+          />
+        )}
+      </Modal>
 
       <Modal isOpen={!!selected} onClose={() => setSelected(null)} title={t.detailTitle} maxWidth="xl">
         {selected && (

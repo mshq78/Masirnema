@@ -76,4 +76,49 @@ export interface ParticipantInput {
   nationalId: string;
 }
 
+/** Analysis report as returned by /api/analysis. All labels and levels come from the server. */
+export interface AnalysisResult {
+  version: string;
+  model: string;
+  createdAt: string;
+  status: 'ok' | 'insufficient_data';
+  statusText: string;
+  indicators: {
+    code: string;
+    title: string;
+    score: number | null;
+    itemCount: number;
+    thinEvidence: boolean;
+    evidence: { questionId: string; score: number; confidence: number; text: string }[];
+  }[];
+  composite: { title: string; score: number | null; levelCode: string | null; levelTitle: string | null };
+  questions: {
+    questionId: string;
+    usable: boolean;
+    flagText: string;
+    ratings: { code: string; title: string; score: number; confidence: number; evidence: string }[];
+    signals: string[];
+  }[];
+  flags: string[];
+  report: {
+    summary: string;
+    motivation_sources: string;
+    meaning_source: string;
+    main_barrier: string;
+    growth_path: string;
+    alignment: string;
+    future_connection: string;
+    conversation_topics: string[];
+  } | null;
+}
+
+export interface AnalysisSummary {
+  sessionId: string;
+  version: string;
+  status: string;
+  createdAt: string;
+  score: number | null;
+  level: string | null;
+}
+
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';
