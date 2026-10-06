@@ -30,12 +30,13 @@ export const AnalysisReport: React.FC<Props> = ({ result, versions, busy, onReru
         [t.reportGrowth, r.growth_path],
         [t.reportAlignment, r.alignment],
         [t.reportFuture, r.future_connection],
-      ]
+      ].filter(([, text]) => !!text) as [string, string][]
     : [];
   const qText = new Map(QUESTIONS.map((q) => [q.id, q.order]));
 
   return (
     <div className="space-y-5">
+      <p className="inline-block rounded-full bg-slate-100 dark:bg-slate-800 px-3 py-1 text-xs font-bold text-slate-700 dark:text-slate-200">{result.methodText}</p>
       <p className="text-xs text-amber-800 dark:text-amber-300 leading-relaxed">{t.reportCaution}</p>
 
       {/* Composite */}
@@ -68,7 +69,7 @@ export const AnalysisReport: React.FC<Props> = ({ result, versions, busy, onReru
           )}
         </div>
       ) : (
-        result.status === 'ok' && <p className="text-sm text-slate-500">{t.reportNoText}</p>
+        result.status === 'ok' && result.method === 'ai' && <p className="text-sm text-slate-500">{t.reportNoText}</p>
       )}
 
       {/* Indicators */}
@@ -137,7 +138,7 @@ export const AnalysisReport: React.FC<Props> = ({ result, versions, busy, onReru
       </details>
 
       <p className="text-[11px] text-slate-500 dark:text-slate-400" dir="ltr">
-        {t.reportMeta} {result.version} · {result.model} · {new Date(result.createdAt).toLocaleString('fa-IR')} · {t.reportVersions}: {versions}
+        {t.reportMeta} {result.version} · {result.method} · {result.model} · {new Date(result.createdAt).toLocaleString('fa-IR')} · {t.reportVersions}: {versions}
       </p>
 
       <div className="flex flex-wrap gap-2">

@@ -80,6 +80,8 @@ export interface ParticipantInput {
 export interface AnalysisResult {
   version: string;
   model: string;
+  method: 'ai' | 'rules' | 'manual';
+  methodText: string;
   createdAt: string;
   status: 'ok' | 'insufficient_data';
   statusText: string;
@@ -119,6 +121,21 @@ export interface AnalysisSummary {
   createdAt: string;
   score: number | null;
   level: string | null;
+  method?: 'ai' | 'rules' | 'manual';
+}
+
+/** Manual rating form: indicators per question are served by the API. */
+export interface ManualFormSpec {
+  scale: string;
+  questions: { questionId: string; indicators: { code: string; title: string; anchors: string }[] }[];
+  suggested: { questionId: string; usable: boolean; flag: string; ratings: { code: string; score: number; evidence: string }[] }[];
+}
+
+export interface ManualQuestionRating {
+  questionId: string;
+  usable: boolean;
+  flag?: 'irrelevant' | 'too_vague' | 'nonsense';
+  ratings: { code: string; score: number; evidence: string }[];
 }
 
 export type SyncStatus = 'idle' | 'saving' | 'saved' | 'error';

@@ -1,4 +1,4 @@
-import { AnalysisResult, AnalysisSummary, Participant, ParticipantInput, SessionRecord } from '../types';
+import { AnalysisResult, AnalysisSummary, ManualFormSpec, ManualQuestionRating, Participant, ParticipantInput, SessionRecord } from '../types';
 
 export type LoginResult =
   | { status: 'ok'; participantToken: string; submitted: boolean; firstName?: string }
@@ -141,19 +141,49 @@ class ApiService {
   /** Admin: runs a new analysis for one session (stored as a new version). */
   async runAnalysis(
     adminPassword: string,
-    sessionId: string
+    sessionId: string,
+    method: 'ai' | 'rules' = 'ai'
   ): Promise<{ ok: true; result: AnalysisResult } | { ok: false; reason: 'not_configured' | 'failed' }> {
     try {
       const res = await fetch('/api/analysis', {
         method: 'POST',
         headers: this.adminHeaders(adminPassword),
-        body: JSON.stringify({ sessionId }),
+        body: JSON.stringify({ sessionId, method }),
       });
       if (res.status === 503) return { ok: false, reason: 'not_configured' };
       if (!res.ok) return { ok: false, reason: 'failed' };
       return { ok: true, result: (await res.json()).result };
     } catch {
       return { ok: false, reason: 'failed' };
+    }
+  }
+
+  /** Admin: indicators per question (+ rule-based suggestions) for the manual rating form. */
+  async getManualForm(adminPassword: string, sessionId: string): Promise<ManualFormSpec | null> {
+    try {
+      const res = await fetch(`/api/analysis?sessionId=${encodeURIComponent(sessionId)}&form=1`, { headers: this.adminHeaders(adminPassword) });
+      return res.ok ? await res.json() : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Admin: stores an analyst's manual ratings as a new analysis version. */
+  async submitManual(
+    adminPassword: string,
+    sessionId: string,
+    ratings: ManualQuestionRating[],
+    note: string
+  ): Promise<AnalysisResult | null> {
+    try {
+      const res = await fetch('/api/analysis', {
+        method: 'POST',
+        headers: this.adminHeaders(adminPassword),
+        body: JSON.stringify({ sessionId, method: 'manual', ratings, note }),
+      });
+      return res.ok ? (await res.json()).result : null;
+    } catch {
+      return null;
     }
   }
 

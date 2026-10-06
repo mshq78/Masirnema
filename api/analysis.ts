@@ -10,7 +10,12 @@ import { createHash, timingSafeEqual } from 'node:crypto';
  *
  * GET  /api/analysis                     → latest analysis summary per session
  * GET  /api/analysis?sessionId=…         → latest full report (+ number of stored versions); audited as "view"
- * POST /api/analysis { sessionId }       → runs a new analysis (a new version row; older results are never deleted)
+ * GET  /api/analysis?sessionId=…&form=1 → data for the manual rating form (+ rule-based suggestions)
+ * POST /api/analysis { sessionId, method?: "ai" | "rules" | "manual", ratings?, note? }
+ *                                        → stores a new analysis version (older results are never deleted)
+ *     ai     = Claude rates each answer (needs ANTHROPIC_API_KEY)
+ *     rules  = built-in lexicon rules, no AI and no network: a rough, indicative estimate only
+ *     manual = an analyst rates each answer on the 0-4 rubric; the same engine computes everything else
  * POST /api/analysis { sessionId, audit: "export" } → records that a report was exported
  *
  * All scoring rules (indicators, weights, rubric, composite index) live ONLY on the server: nothing here is
@@ -122,6 +127,13 @@ export function compositeLevel(score: number): { code: string; title: string } {
 // Pure scoring (unit-tested)
 // ---------------------------------------------------------------------------------------------
 
+export type Method = 'ai' | 'rules' | 'manual';
+export const METHOD_TEXT: Record<Method, string> = {
+  ai: 'تحلیل خودکار با هوش مصنوعی',
+  rules: 'تحلیل قاعده‌محور (برآورد تقریبی، بدون هوش مصنوعی)',
+  manual: 'تحلیل دستی توسط تحلیل‌گر',
+};
+
 export type QualityFlag = 'ok' | 'irrelevant' | 'too_vague' | 'repetitive' | 'nonsense' | 'model_error';
 
 export interface QuestionRating {
@@ -189,6 +201,8 @@ export interface IndicatorResult {
 export interface AnalysisResult {
   version: string;
   model: string;
+  method: Method;
+  methodText: string;
   createdAt: string;
   status: 'ok' | 'insufficient_data';
   statusText: string;
@@ -220,8 +234,9 @@ export interface ReportText {
 export function buildResult(
   answers: AnswerInput[],
   ratings: QuestionRating[],
-  meta: { model: string; createdAt: string }
+  meta: { model: string; createdAt: string; method?: Method }
 ): Omit<AnalysisResult, 'report'> {
+  const method: Method = meta.method ?? 'ai';
   const byQ = new Map(ratings.map((r) => [r.questionId, r]));
   const unusable = QUESTION_SPECS.filter((q) => !byQ.get(q.id)?.usable);
   const insufficient = unusable.length > MAX_UNUSABLE;
@@ -264,12 +279,15 @@ export function buildResult(
   if (repeated.length > 3) flags.push(`پاسخ‌های تقریباً تکراری در ${repeated.length} سؤال؛ نیازمند بررسی انسانی (${repeated.join('، ')}).`);
   for (const i of indicators)
     if (!insufficient && i.thinEvidence) flags.push(`شواهد شاخص «${i.title}» محدود است (${i.itemCount} سؤال).`);
-  const lowConfidence = ratings.filter((r) => r.usable && r.ratings.some((x) => x.confidence < 0.5)).map((r) => r.questionId);
+  if (method === 'rules') flags.push('این نتیجه با قواعد واژگانی ساده برآورد شده و فقط تقریبی است؛ برای مبنا قرار دادن نیاز به بازبینی انسانی دارد.');
+  const lowConfidence = method === 'rules' ? [] : ratings.filter((r) => r.usable && r.ratings.some((x) => x.confidence < 0.5)).map((r) => r.questionId);
   if (lowConfidence.length > 0) flags.push(`اطمینان پایین تحلیل در: ${lowConfidence.join('، ')}.`);
 
   return {
     version: ANALYSIS_VERSION,
     model: meta.model,
+    method,
+    methodText: METHOD_TEXT[method],
     createdAt: meta.createdAt,
     status: insufficient ? 'insufficient_data' : 'ok',
     statusText: insufficient ? 'داده کافی برای تفسیر وجود ندارد' : 'تحلیل کامل شد',
@@ -287,6 +305,136 @@ export function buildResult(
       };
     }),
     flags,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Rule-based estimate (no AI) and manual ratings
+// ---------------------------------------------------------------------------------------------
+
+export const RULES_VERSION = 'rules-1';
+
+/**
+ * Lexicon cues per indicator (normalized stems: Persian yeh/kaf, no half-spaces, no diacritics).
+ * This only counts the presence of cue words, so it cannot understand meaning: it is an indicative
+ * estimate that an analyst should review, never a substitute for a rubric-based reading.
+ */
+const LEXICON: Record<Code, { pos: string[]; neg: string[] }> = {
+  E: {
+    pos: ['انرژی', 'شوق', 'علاقه', 'اشتیاق', 'انگیزه', 'کنجکاو', 'لذت', 'هیجان', 'شور', 'دوست دارم', 'پیگیر', 'ابتکار', 'ایده', 'خلاق', 'چالش', 'مشتاق', 'جذاب', 'خوشحال', 'رضایت', 'ذوق', 'تلاش'],
+    neg: ['خسته', 'بیحوصله', 'بیانگیزه', 'فرسوده', 'بیتفاوت', 'کسل', 'دلسرد', 'مجبور', 'اجبار', 'زورکی', 'بیرمق'],
+  },
+  M: {
+    pos: ['معنا', 'ارزش', 'اثر', 'تاثیر', 'فایده', 'نتیجه', 'مشتری', 'کمک', 'مفید', 'هدف', 'ماموریت', 'رسالت', 'بهبود', 'تغییر', 'حل کرد', 'حل شد', 'خدمت', 'موفق', 'قدردان', 'دیده شد'],
+    neg: ['صرفا وظیفه', 'فقط وظیفه', 'بیمعنا', 'بیهوده', 'بیفایده', 'فقط حقوق', 'بیارزش', 'روتین'],
+  },
+  O: {
+    pos: ['مسئولیت', 'پیگیری', 'تعهد', 'خودم', 'دقت', 'کیفیت', 'استاندارد', 'تصمیم', 'اقدام', 'عهده', 'پاسخگو', 'تحویل', 'جدیت', 'وجدان', 'تا آخر', 'به پایان', 'اصلاح', 'نتیجه'],
+    neg: ['تقصیر', 'گردن', 'منتظر', 'ربطی ندارد', 'مدیر باید', 'دیگران باید', 'اختیار ندارم', 'کاری از دست من'],
+  },
+  G: {
+    pos: ['یادگیر', 'یاد بگیر', 'رشد', 'مهارت', 'ارتقا', 'پیشرفت', 'دوره', 'تجربه', 'توسعه', 'تخصص', 'متخصص', 'مطالعه', 'بهتر شدن', 'رهبری', 'شناخته شوم', 'مدیر', 'گسترش', 'آینده'],
+    neg: ['بیهدف', 'نمیدانم', 'مطمئن نیستم', 'فرقی نمیکند', 'تغییری نمیخواهم'],
+  },
+  A: {
+    pos: ['سازمان', 'شرکت', 'تیم', 'اینجا', 'همراستا', 'ماموریت', 'مشتریان', 'اهداف سازمان', 'مشارکت', 'سهم', 'همکاری', 'فرصت', 'مسیر مشترک', 'ارزشهای سازمان', 'رشد سازمان'],
+    neg: ['تعارض', 'بیعدالتی', 'ناعادلانه', 'نادیده', 'شنیده نمیشود', 'سیاسی', 'ناهماهنگ', 'نمیگذارند'],
+  },
+  F: {
+    pos: ['آینده', 'اینجا', 'سازمان', 'ماندگار', 'بلندمدت', 'نقش', 'سهم', 'مسیر', 'ادامه', 'جایگاه', 'بمانم', 'تعلق', 'دلبسته', 'وفادار', 'شرکت'],
+    neg: ['ترک', 'استعفا', 'بیرون', 'جای دیگر', 'مهاجرت', 'کار دیگر', 'شرکت دیگر', 'فرصت بهتر', 'نمیمانم', 'موقت', 'فصل موقت'],
+  },
+};
+
+const EXAMPLE_MARKERS = ['مثلا', 'برای مثال', 'پروژه', 'مشتری', 'هفته', 'ماه', 'سال', 'گزارش', 'جلسه', 'تحویل', 'قرارداد', 'فروش', 'محصول'];
+
+export function normalizeFa(s: string): string {
+  return s
+    .replace(/ي/g, 'ی').replace(/ك/g, 'ک')
+    .replace(/[‌ً-ٟ]/g, '')
+    .replace(/[۰-۹٠-٩]/g, (c) => String('۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩'.indexOf(c) % 10))
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/** A cue matches when it starts a word (Persian affixes are mostly suffixes), which avoids hits inside unrelated words. */
+const startsWord = (text: string, cue: string) => (' ' + text.replace(/[^\p{L}\p{N}]+/gu, ' ') + ' ').includes(' ' + cue);
+const countCues = (text: string, cues: string[]) => cues.filter((c) => startsWord(text, c));
+
+/** Rough, deterministic estimate for one answer. Confidence is always low (≤ 0.5). */
+export function rulesRate(spec: QuestionSpec, rawText: string, maxChars = 300): QuestionRating {
+  const text = normalizeFa(rawText);
+  const tokens = text.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  const unique = new Set(tokens);
+  const fail = (flag: QualityFlag): QuestionRating => ({ questionId: spec.id, usable: false, flag, ratings: [] });
+
+  if (tokens.length < 4) return fail('too_vague');
+  if (tokens.length >= 6 && unique.size / tokens.length < 0.4) return fail('nonsense');
+
+  const questionWords = new Set(normalizeFa(spec.text).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4));
+  const overlap = new Set(tokens.filter((w) => questionWords.has(w))).size;
+  const anyCue = CODES.some((c) => countCues(text, LEXICON[c].pos).length + countCues(text, LEXICON[c].neg).length > 0);
+  if (!anyCue && overlap < 2) return fail('irrelevant');
+
+  const examples = EXAMPLE_MARKERS.filter((m) => startsWord(text, m)).length + (/\d/.test(text) ? 1 : 0);
+  const exampleBonus = examples >= 2 ? 1 : examples === 1 ? 0.5 : 0;
+  const lengthBonus = 0.5 * Math.min(1, rawText.trim().length / (0.7 * maxChars));
+
+  const ratings = (Object.keys(spec.weights) as Code[]).map((code) => {
+    const pos = countCues(text, LEXICON[code].pos);
+    const neg = countCues(text, LEXICON[code].neg);
+    const raw = Math.min(pos.length, 6) * 0.8 + exampleBonus + lengthBonus - Math.min(neg.length, 3) * 1.2;
+    let score = Math.min(4, Math.max(0, Math.round(raw)));
+    if (pos.length === 0) score = Math.min(score, 1);
+    const evidence = [
+      pos.length ? `نشانه‌ها: ${pos.slice(0, 4).join('، ')}` : 'نشانهٔ واژگانی یافت نشد',
+      neg.length ? `نشانه‌های مخالف: ${neg.slice(0, 3).join('، ')}` : '',
+    ].filter(Boolean).join(' | ');
+    return { code, score, evidence, confidence: pos.length >= 3 ? 0.45 : 0.35 };
+  });
+  return { questionId: spec.id, usable: true, flag: 'ok', ratings };
+}
+
+export function rulesAnalyze(answers: AnswerInput[]): QuestionRating[] {
+  return QUESTION_SPECS.map((spec) => rulesRate(spec, answers.find((a) => a.questionId === spec.id)?.text ?? ''));
+}
+
+/**
+ * Validates analyst ratings from the manual form. Every question must be either marked unusable (with a
+ * reason) or carry a 0-4 score for exactly the indicators linked to it. Returns null when invalid.
+ */
+export function validateManualRatings(body: unknown): QuestionRating[] | null {
+  if (!Array.isArray(body) || body.length !== QUESTION_SPECS.length) return null;
+  const out: QuestionRating[] = [];
+  for (const spec of QUESTION_SPECS) {
+    const item: any = body.find((b: any) => b?.questionId === spec.id);
+    if (!item || typeof item.usable !== 'boolean') return null;
+    if (!item.usable) {
+      const flag: QualityFlag = ['irrelevant', 'too_vague', 'nonsense'].includes(item.flag) ? item.flag : 'irrelevant';
+      out.push({ questionId: spec.id, usable: false, flag, ratings: [] });
+      continue;
+    }
+    const expected = Object.keys(spec.weights) as Code[];
+    const ratings: QuestionRating['ratings'] = [];
+    for (const code of expected) {
+      const r = Array.isArray(item.ratings) ? item.ratings.find((x: any) => x?.code === code) : null;
+      if (!r || !Number.isInteger(r.score) || r.score < 0 || r.score > 4) return null;
+      const evidence = typeof r.evidence === 'string' ? r.evidence.trim().slice(0, 300) : '';
+      ratings.push({ code, score: r.score, evidence, confidence: 1 });
+    }
+    out.push({ questionId: spec.id, usable: true, flag: 'ok', ratings });
+  }
+  return out;
+}
+
+/** What the manual form needs per question. Served by the API so the client never hardcodes indicators. */
+export function manualFormSpec() {
+  return {
+    scale: RUBRIC,
+    questions: QUESTION_SPECS.map((q) => ({
+      questionId: q.id,
+      indicators: (Object.keys(q.weights) as Code[]).map((c) => ({ code: c, title: INDICATORS[c].title, anchors: INDICATORS[c].anchors })),
+    })),
   };
 }
 
@@ -426,7 +574,7 @@ export async function analyzeSession(answers: AnswerInput[]): Promise<AnalysisRe
   const ratings = await Promise.all(
     QUESTION_SPECS.map((spec) => rateQuestion(spec, answers.find((a) => a.questionId === spec.id)?.text ?? ''))
   );
-  const base = buildResult(answers, ratings, { model: modelId(), createdAt: new Date().toISOString() });
+  const base = buildResult(answers, ratings, { model: modelId(), createdAt: new Date().toISOString(), method: 'ai' });
   return { ...base, report: await writeReport(base) };
 }
 
@@ -504,17 +652,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!sessionId) {
         const rows = await sql!`
           SELECT DISTINCT ON (session_id) session_id, version, status, created_at,
-                 result->'composite'->>'score' AS score, result->'composite'->>'levelTitle' AS level
+                 result->'composite'->>'score' AS score, result->'composite'->>'levelTitle' AS level, result->>'method' AS method
           FROM masirnama_analyses ORDER BY session_id, id DESC
         `;
         return res.status(200).json({
           analyses: rows.map((r: any) => ({
             sessionId: r.session_id, version: r.version, status: r.status, createdAt: r.created_at,
-            score: r.score === null ? null : Number(r.score), level: r.level,
+            score: r.score === null ? null : Number(r.score), level: r.level, method: r.method ?? 'ai',
           })),
         });
       }
       if (!SESSION_ID.test(sessionId)) return res.status(400).json({ error: 'invalid_session' });
+      if (req.query.form === '1') {
+        const srows = await sql!`SELECT data FROM masirnama_sessions WHERE session_id = ${sessionId}`;
+        const data = srows[0]?.data;
+        if (!data) return res.status(404).json({ error: 'session_not_found' });
+        const sAnswers: AnswerInput[] = (data.answers ?? []).map((a: any) => ({ questionId: a.questionId, text: a.text, clientMeta: a.clientMeta }));
+        return res.status(200).json({ ...manualFormSpec(), suggested: rulesAnalyze(sAnswers) });
+      }
       const rows = await sql!`SELECT result FROM masirnama_analyses WHERE session_id = ${sessionId} ORDER BY id DESC LIMIT 1`;
       if (rows.length === 0) return res.status(404).json({ error: 'no_analysis' });
       const count = await sql!`SELECT count(*)::int AS n FROM masirnama_analyses WHERE session_id = ${sessionId}`;
@@ -531,7 +686,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true });
       }
 
-      if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'analysis_not_configured' });
+      const method: Method = req.body?.method === 'rules' || req.body?.method === 'manual' ? req.body.method : 'ai';
+      if (method === 'ai' && !process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'analysis_not_configured' });
       let session: any;
       try {
         const rows = await sql!`SELECT data FROM masirnama_sessions WHERE session_id = ${sessionId}`;
@@ -544,12 +700,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const answers: AnswerInput[] = (session.answers ?? []).map((a: any) => ({
         questionId: a.questionId, text: a.text, clientMeta: a.clientMeta,
       }));
-      const result = await analyzeSession(answers);
+      let result: AnalysisResult;
+      if (method === 'ai') {
+        result = await analyzeSession(answers);
+      } else {
+        const ratings = method === 'rules' ? rulesAnalyze(answers) : validateManualRatings(req.body?.ratings);
+        if (!ratings) return res.status(400).json({ error: 'invalid_ratings' });
+        const base = buildResult(answers, ratings, {
+          model: method === 'rules' ? RULES_VERSION : 'manual',
+          createdAt: new Date().toISOString(),
+          method,
+        });
+        const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 2000) : '';
+        result = {
+          ...base,
+          report: note
+            ? { summary: note, motivation_sources: '', meaning_source: '', main_barrier: '', growth_path: '', alignment: '', future_connection: '', conversation_topics: [] }
+            : null,
+        };
+      }
       await sql!`
         INSERT INTO masirnama_analyses (session_id, version, model, status, result)
         VALUES (${sessionId}, ${result.version}, ${result.model}, ${result.status}, ${JSON.stringify(result)}::jsonb)
       `;
-      await audit(req, 'run_analysis', sessionId);
+      await audit(req, `run_analysis_${method}`, sessionId);
       return res.status(200).json({ result });
     }
 

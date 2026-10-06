@@ -1,7 +1,7 @@
 import { QUESTIONS } from '../questions';
 import {
   CODES, COMPOSITE_WEIGHTS, QUESTION_SPECS, Code, QuestionRating, AnswerInput,
-  buildResult, compositeLevel, repeatedAnswerQuestions, behaviourSignals,
+  buildResult, compositeLevel, repeatedAnswerQuestions, behaviourSignals, rulesRate, rulesAnalyze, validateManualRatings, normalizeFa,
 } from '../../api/analysis';
 import type { TestResult } from './unitTests';
 import { UI_STRINGS, CONSENT_TEXT } from '../content/ui.fa';
@@ -77,6 +77,33 @@ export function runServerTests(): { allPassed: boolean; results: TestResult[] } 
     && behaviourSignals({ questionId: 'Q01', text: 'x'.repeat(100), clientMeta: { activeTimeMs: 1000, pastedChars: 100, editCount: 9 } }).length === 3);
   const thin = buildResult(answers, rateAll(3, ['Q03', 'Q04', 'Q01']).map((r) => r), meta);
   check('thin evidence is flagged per indicator', thin.status === 'insufficient_data' || thin.indicators.some((i) => i.thinEvidence));
+
+  // --- rule-based estimate (no AI) ---
+  const q1 = QUESTION_SPECS[0];
+  const rich = rulesRate(q1, 'پروژه نوسازی را با مشتری به نتیجه رساندیم و اثر آن را دیدم؛ انرژی و انگیزه گرفتم و ارزش کارم برایم معنا پیدا کرد.');
+  const poor = rulesRate(q1, 'خسته بودم و کار فقط وظیفه بود و بی‌انگیزه به خانه رفتم و هیچ ارزشی ندیدم');
+  const score = (r: QuestionRating, c: Code) => r.ratings.find((x) => x.code === c)!.score;
+  check('rules: concrete, meaningful answer scores higher than a flat one on M and E', rich.usable && poor.usable && score(rich, 'M') > score(poor, 'M') && score(rich, 'E') > score(poor, 'E'), `rich M${score(rich, 'M')} E${score(rich, 'E')} / poor M${score(poor, 'M')} E${score(poor, 'E')}`);
+  check('rules: gibberish is not scorable', !rulesRate(q1, 'الف الف الف الف الف الف الف').usable);
+  check('rules: very short answer is not scorable', !rulesRate(q1, 'خوب بود').usable);
+  check('rules: answer unrelated to the lexicon is flagged irrelevant', rulesRate(q1, 'امروز هوا آفتابی است و کبوترها روی بام نشسته‌اند').flag === 'irrelevant');
+  const leaving = rulesRate(QUESTION_SPECS[11], 'فکر می‌کنم این دوره موقت است و بعد از آن به فرصت بهتر در جای دیگر می‌روم و استعفا می‌دهم');
+  const staying = rulesRate(QUESTION_SPECS[11], 'در آینده نقش بزرگ‌تری در سازمان دارم و رشد می‌کنم و سهم مشخصی در مسیر شرکت خواهم داشت');
+  check('rules: leaving cues lower F, bond cues raise it', leaving.usable && staying.usable && score(staying, 'F') > score(leaving, 'F'));
+  check('rules: confidence is always low (≤ 0.5)', [rich, poor, staying].every((r) => r.ratings.every((x) => x.confidence <= 0.5)));
+  const rulesOut = buildResult(answers, rulesAnalyze(answers), { ...meta, method: 'rules' });
+  check('rules: result is labelled as a rough estimate and carries the warning flag', rulesOut.method === 'rules' && rulesOut.flags.some((f) => f.includes('تقریبی')));
+  check('normalizeFa unifies yeh/kaf, digits and half-spaces', normalizeFa('می‌خواهم ۱۲ كتاب ي') === 'میخواهم 12 کتاب ی');
+
+  // --- manual ratings ---
+  const manualOk = QUESTION_SPECS.map((q) => ({ questionId: q.id, usable: true, ratings: (Object.keys(q.weights) as Code[]).map((c) => ({ code: c, score: 3, evidence: 'شاهد' })) }));
+  const parsedManual = validateManualRatings(manualOk);
+  check('manual: valid ratings accepted and fed to the same engine', !!parsedManual && buildResult(answers, parsedManual, { ...meta, method: 'manual' }).composite.score === 75);
+  check('manual: missing indicator rejected', validateManualRatings(manualOk.map((m, i) => (i === 0 ? { ...m, ratings: m.ratings.slice(1) } : m))) === null);
+  check('manual: score out of range rejected', validateManualRatings(manualOk.map((m, i) => (i === 0 ? { ...m, ratings: m.ratings.map((r) => ({ ...r, score: 5 })) } : m))) === null);
+  check('manual: wrong number of questions rejected', validateManualRatings(manualOk.slice(1)) === null);
+  const manualUnusable = validateManualRatings(manualOk.map((m, i) => (i < 3 ? { questionId: m.questionId, usable: false, flag: 'too_vague' } : m)));
+  check('manual: >2 unusable questions → insufficient data through the same rules', !!manualUnusable && buildResult(answers, manualUnusable, { ...meta, method: 'manual' }).status === 'insufficient_data');
 
   return { allPassed: results.every((r) => r.passed), results };
 }

@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
 import { Lock, FileJson, FileSpreadsheet, ShieldCheck, Search, RefreshCw, Eye, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { api } from '../../services/api';
-import { AnalysisResult, AnalysisSummary, Participant, SessionRecord } from '../../types';
+import { AnalysisResult, AnalysisSummary, ManualFormSpec, Participant, SessionRecord } from '../../types';
 import { AnalysisReport } from './AnalysisReport';
+import { ManualRating } from './ManualRating';
 import { ParticipantsPanel } from './ParticipantsPanel';
 import { QUESTIONS } from '../../questions';
 import { UI_STRINGS } from '../../content/ui.fa';
@@ -50,6 +51,11 @@ export const AdminView: React.FC = () => {
   const [analyses, setAnalyses] = useState<Record<string, AnalysisSummary>>({});
   const [analyzing, setAnalyzing] = useState<Set<string>>(new Set());
   const [analysisMsg, setAnalysisMsg] = useState('');
+  const [chooser, setChooser] = useState<SessionRecord | null>(null);
+  const [manual, setManual] = useState<{ session: SessionRecord; form: ManualFormSpec } | null>(null);
+  const [manualBusy, setManualBusy] = useState(false);
+  const [manualError, setManualError] = useState('');
+  const [bulkMethod, setBulkMethod] = useState<'ai' | 'rules'>('rules');
   const [report, setReport] = useState<{ session: SessionRecord; result: AnalysisResult; versions: number } | null>(null);
   const [tab, setTab] = useState<'sessions' | 'participants'>('participants');
   const [selected, setSelected] = useState<SessionRecord | null>(null);
@@ -62,10 +68,10 @@ export const AdminView: React.FC = () => {
     if (list) setAnalyses(Object.fromEntries(list.map((a) => [a.sessionId, a])));
   };
 
-  const analyzeOne = async (s: SessionRecord): Promise<boolean> => {
+  const analyzeOne = async (s: SessionRecord, method: 'ai' | 'rules' = 'ai'): Promise<boolean> => {
     setAnalyzing((prev) => new Set(prev).add(s.sessionId));
     setAnalysisMsg('');
-    const res = await api.runAnalysis(adminPassword, s.sessionId);
+    const res = await api.runAnalysis(adminPassword, s.sessionId, method);
     setAnalyzing((prev) => {
       const next = new Set(prev);
       next.delete(s.sessionId);
@@ -84,14 +90,43 @@ export const AdminView: React.FC = () => {
     if (data) setReport({ session: s, ...data });
   };
 
-  const rerunFromReport = async () => {
+  const rerunFromReport = () => {
     if (!report) return;
-    if (await analyzeOne(report.session)) await openReport(report.session);
+    setChooser(report.session);
+  };
+
+  const startAnalysis = async (s: SessionRecord, method: 'ai' | 'rules' | 'manual') => {
+    setChooser(null);
+    if (method === 'manual') {
+      setManualError('');
+      const form = await api.getManualForm(adminPassword, s.sessionId);
+      if (form) setManual({ session: s, form });
+      else setAnalysisMsg(t.analyzeFailed);
+      return;
+    }
+    if (await analyzeOne(s, method)) {
+      if (report) setReport(null);
+      await openReport(s);
+    }
+  };
+
+  const submitManual = async (ratings: Parameters<typeof api.submitManual>[2], note: string) => {
+    if (!manual) return;
+    setManualBusy(true);
+    setManualError('');
+    const result = await api.submitManual(adminPassword, manual.session.sessionId, ratings, note);
+    setManualBusy(false);
+    if (!result) return setManualError(t.manualFailed);
+    const s = manual.session;
+    setManual(null);
+    setReport(null);
+    await loadAnalyses(adminPassword);
+    await openReport(s);
   };
 
   const analyzeAllPending = async () => {
     for (const s of sessions.filter((x) => !analyses[x.sessionId])) {
-      if (!(await analyzeOne(s))) break;
+      if (!(await analyzeOne(s, bulkMethod))) break;
     }
   };
 
@@ -316,6 +351,17 @@ export const AdminView: React.FC = () => {
         >
           {analyzing.size > 0 ? t.analyzeProgress : t.analyzeAll}
         </Button>
+        <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
+          {t.bulkMethod}
+          <select
+            value={bulkMethod}
+            onChange={(e) => setBulkMethod(e.target.value as 'ai' | 'rules')}
+            className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1"
+          >
+            <option value="rules">{t.methodRules}</option>
+            <option value="ai">{t.methodAi}</option>
+          </select>
+        </label>
         {analysisMsg && <span role="alert" className="text-xs text-rose-500 font-medium">{analysisMsg}</span>}
       </div>
 
@@ -362,7 +408,7 @@ export const AdminView: React.FC = () => {
                         {analyses[s.sessionId].level ? ` · ${analyses[s.sessionId].level}` : ''}
                       </Button>
                     ) : (
-                      <Button variant="outline" size="sm" isLoading={analyzing.has(s.sessionId)} onClick={() => analyzeOne(s)}>
+                      <Button variant="outline" size="sm" isLoading={analyzing.has(s.sessionId)} onClick={() => setChooser(s)}>
                         {t.analyze}
                       </Button>
                     )}
@@ -381,6 +427,26 @@ export const AdminView: React.FC = () => {
 
         </>
       )}
+
+      <Modal isOpen={!!chooser} onClose={() => setChooser(null)} title={t.chooseMethodTitle} maxWidth="sm">
+        <div className="space-y-3">
+          {([['ai', t.methodAi, t.methodAiHint], ['rules', t.methodRules, t.methodRulesHint], ['manual', t.methodManual, t.methodManualHint]] as const).map(([m, label, hint]) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => chooser && startAnalysis(chooser, m)}
+              className="w-full text-right rounded-2xl border border-slate-200 dark:border-slate-800 p-3 hover:border-amber-400 transition cursor-pointer"
+            >
+              <div className="text-sm font-bold text-slate-900 dark:text-amber-100">{label}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{hint}</div>
+            </button>
+          ))}
+        </div>
+      </Modal>
+
+      <Modal isOpen={!!manual} onClose={() => !manualBusy && setManual(null)} title={t.manualTitle} maxWidth="xl">
+        {manual && <ManualRating session={manual.session} form={manual.form} busy={manualBusy} error={manualError} onSubmit={submitManual} />}
+      </Modal>
 
       <Modal isOpen={!!report} onClose={() => setReport(null)} title={t.reportTitle} maxWidth="xl">
         {report && (
